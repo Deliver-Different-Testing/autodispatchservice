@@ -29,11 +29,16 @@ builder.Services.Configure<HealthCheckPublisherOptions>(options =>
 // Coravel scheduler
 builder.Services.AddScheduler();
 
+// Internal service key for authenticating with AutoDispatch API
+var internalServiceKey = Environment.GetEnvironmentVariable("InternalServiceKey") ?? "";
+if (string.IsNullOrEmpty(internalServiceKey))
+    Log.Warning("InternalServiceKey env var not set — API calls may be rejected");
+
 // HTTP client for calling AutoDispatch API
 builder.Services.AddHttpClient("AutoDispatchApi", client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
-    client.DefaultRequestHeaders.Add("X-Requested-With", "XMLHttpRequest");
+    client.DefaultRequestHeaders.Add("X-Internal-Service-Key", internalServiceKey);
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
