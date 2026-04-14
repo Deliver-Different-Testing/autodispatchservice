@@ -1,0 +1,4 @@
+include:
+  - project: 'urgent-couriers/ci-templates'
+    file: 'ci-template.yml'
+    ref: 'main'

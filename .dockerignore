@@ -1,0 +1,12 @@
+.git
+.gitignore
+.idea/
+.vs/
+*.user
+**/bin/
+**/obj/
+*.md
+.gitlab-ci.yml
+.claude/
+.env
+.env.*
