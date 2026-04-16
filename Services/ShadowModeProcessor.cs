@@ -52,6 +52,8 @@ public class ShadowModeProcessor
             FROM tucJob WITH (NOLOCK)
             WHERE ucjbJobDone = 0
               AND ucjbVoid = 0
+              AND ucjbDate >= CAST(GETDATE() AS DATE)
+              AND ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
               AND ClosestCourierScoredAt IS NULL
               AND PickUpLatitude IS NOT NULL
               AND PickUpLongitude IS NOT NULL
@@ -113,6 +115,8 @@ public class ShadowModeProcessor
             FROM tucJob j WITH (NOLOCK)
             WHERE j.ucjbJobDone = 0
               AND j.ucjbVoid = 0
+              AND j.ucjbDate >= CAST(GETDATE() AS DATE)
+              AND j.ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
               AND j.ucjbCourierID IS NOT NULL
               AND j.ucjbCourierID > 0
               AND j.ClosestCourierScoredAt IS NOT NULL
