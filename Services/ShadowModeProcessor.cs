@@ -54,6 +54,9 @@ public class ShadowModeProcessor
               AND ucjbVoid = 0
               AND ucjbDate >= CAST(GETDATE() AS DATE)
               AND ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
+              AND CAST(ucjbTime AS TIME) BETWEEN
+                  CAST(DATEADD(minute, -15, GETDATE()) AS TIME) AND
+                  CAST(DATEADD(hour, 2, GETDATE()) AS TIME)
               AND ClosestCourierScoredAt IS NULL
               AND PickUpLatitude IS NOT NULL
               AND PickUpLongitude IS NOT NULL
@@ -117,6 +120,9 @@ public class ShadowModeProcessor
               AND j.ucjbVoid = 0
               AND j.ucjbDate >= CAST(GETDATE() AS DATE)
               AND j.ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
+              AND CAST(j.ucjbTime AS TIME) BETWEEN
+                  CAST(DATEADD(minute, -15, GETDATE()) AS TIME) AND
+                  CAST(DATEADD(hour, 2, GETDATE()) AS TIME)
               AND j.ucjbCourierID IS NOT NULL
               AND j.ucjbCourierID > 0
               AND j.ClosestCourierScoredAt IS NOT NULL
