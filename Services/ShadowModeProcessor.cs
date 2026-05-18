@@ -47,22 +47,27 @@ public class ShadowModeProcessor
         await conn.OpenAsync();
 
         await using var cmd = conn.CreateCommand();
+        // tucJobType.AutoDispatchEnabled filter: only jobs whose speed has been explicitly
+        // opted-in to auto-dispatch via Admin Manager are scored. Opt-in is the default —
+        // see autodispatch repo docs/JOB-TYPE-FILTER-IMPLEMENTATION.md.
         cmd.CommandText = @"
-            SELECT TOP 50 ucjbID
-            FROM tucJob WITH (NOLOCK)
-            WHERE ucjbJobDone = 0
-              AND ucjbVoid = 0
-              AND ucjbDate >= CAST(GETDATE() AS DATE)
-              AND ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
-              AND CAST(ucjbTime AS TIME) BETWEEN
+            SELECT TOP 50 j.ucjbID
+            FROM tucJob j WITH (NOLOCK)
+            INNER JOIN tucJobType jt WITH (NOLOCK) ON jt.UcjtId = j.ucjbSpeed
+            WHERE j.ucjbJobDone = 0
+              AND j.ucjbVoid = 0
+              AND j.ucjbDate >= CAST(GETDATE() AS DATE)
+              AND j.ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
+              AND CAST(j.ucjbTime AS TIME) BETWEEN
                   CAST(DATEADD(minute, -15, GETDATE()) AS TIME) AND
                   CAST(DATEADD(hour, 2, GETDATE()) AS TIME)
-              AND ClosestCourierScoredAt IS NULL
-              AND PickUpLatitude IS NOT NULL
-              AND PickUpLongitude IS NOT NULL
-              AND DeliveryLatitude IS NOT NULL
-              AND DeliveryLongitude IS NOT NULL
-            ORDER BY ucjbID DESC";
+              AND j.ClosestCourierScoredAt IS NULL
+              AND j.PickUpLatitude IS NOT NULL
+              AND j.PickUpLongitude IS NOT NULL
+              AND j.DeliveryLatitude IS NOT NULL
+              AND j.DeliveryLongitude IS NOT NULL
+              AND jt.AutoDispatchEnabled = 1
+            ORDER BY j.ucjbID DESC";
 
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
