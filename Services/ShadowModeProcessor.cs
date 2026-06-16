@@ -24,11 +24,13 @@ public class ShadowModeProcessor
 
     public async Task ProcessAsync()
     {
-        // Check dispatch mode first — skip if Off
+        // Check dispatch mode first. Fail-safe: only proceed for an explicitly recognised ACTIVE mode.
+        // Anything else — "off", null, empty, "0", or an unexpected value — skips, so a misconfigured
+        // or unreadable config can never silently leave the paid HERE Maps calls running.
         var mode = await GetDispatchModeAsync();
-        if (string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
+        if (!IsActiveMode(mode))
         {
-            Log.Debug("Dispatch mode is Off — skipping");
+            Log.Debug("Dispatch mode '{Mode}' is not an active mode — skipping (no API calls)", mode);
             return;
         }
 
@@ -47,22 +49,28 @@ public class ShadowModeProcessor
         await conn.OpenAsync();
 
         await using var cmd = conn.CreateCommand();
+        // Only jobs whose speed/job-type is explicitly opted in (tucJobType.AutoDispatchEnabled = 1)
+        // are scored — this is the primary cost guard that keeps non-opted jobs out of the paid
+        // HERE Maps pool. The INNER JOIN excludes everything that hasn't been ticked on in Admin Manager.
         cmd.CommandText = @"
-            SELECT TOP 50 ucjbID
-            FROM tucJob WITH (NOLOCK)
-            WHERE ucjbJobDone = 0
-              AND ucjbVoid = 0
-              AND ucjbDate >= CAST(GETDATE() AS DATE)
-              AND ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
-              AND CAST(ucjbTime AS TIME) BETWEEN
+            SELECT TOP 50 j.ucjbID
+            FROM tucJob j WITH (NOLOCK)
+            INNER JOIN tucJobType jt WITH (NOLOCK)
+                ON jt.ucjtID = j.ucjbSpeed
+               AND jt.AutoDispatchEnabled = 1
+            WHERE j.ucjbJobDone = 0
+              AND j.ucjbVoid = 0
+              AND j.ucjbDate >= CAST(GETDATE() AS DATE)
+              AND j.ucjbDate < CAST(DATEADD(day, 1, GETDATE()) AS DATE)
+              AND CAST(j.ucjbTime AS TIME) BETWEEN
                   CAST(DATEADD(minute, -15, GETDATE()) AS TIME) AND
                   CAST(DATEADD(hour, 2, GETDATE()) AS TIME)
-              AND ClosestCourierScoredAt IS NULL
-              AND PickUpLatitude IS NOT NULL
-              AND PickUpLongitude IS NOT NULL
-              AND DeliveryLatitude IS NOT NULL
-              AND DeliveryLongitude IS NOT NULL
-            ORDER BY ucjbID DESC";
+              AND j.ClosestCourierScoredAt IS NULL
+              AND j.PickUpLatitude IS NOT NULL
+              AND j.PickUpLongitude IS NOT NULL
+              AND j.DeliveryLatitude IS NOT NULL
+              AND j.DeliveryLongitude IS NOT NULL
+            ORDER BY j.ucjbID DESC";
 
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -181,8 +189,17 @@ public class ShadowModeProcessor
         }
     }
 
+    private static readonly HashSet<string> ActiveModes =
+        new(StringComparer.OrdinalIgnoreCase) { "shadow", "suggest", "assist", "auto" };
+
+    /// <summary>Active modes are the only ones that may trigger paid HERE Maps calls.</summary>
+    private static bool IsActiveMode(string? mode) =>
+        !string.IsNullOrWhiteSpace(mode) && ActiveModes.Contains(mode.Trim());
+
     /// <summary>
-    /// Read the current dispatch mode from Dispatch_Config.
+    /// Read the current dispatch mode from Dispatch_Config. Reads the most recently updated row
+    /// deterministically (the old TOP 1 with no ORDER BY returned an arbitrary row when the table
+    /// had more than one), and defaults to "off" on any error so failures fail safe.
     /// </summary>
     private async Task<string> GetDispatchModeAsync()
     {
@@ -192,7 +209,7 @@ public class ShadowModeProcessor
             await conn.OpenAsync();
 
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT TOP 1 Mode FROM Dispatch_Config";
+            cmd.CommandText = "SELECT TOP 1 Mode FROM Dispatch_Config ORDER BY LastUpdated DESC, ConfigId DESC";
 
             var result = await cmd.ExecuteScalarAsync();
             return result?.ToString() ?? "off";
