@@ -6,8 +6,12 @@ hpa:
   targetCPUUtilizationPercentage: 80
 podDisruptionBudget:
   enabled: true
-  minAvailable: 1
-  maxUnavailable: null
+  # minAvailable is an explicit null: with one replica, minAvailable 1 makes the
+  # pod unevictable, which pins its node (Karpenter cannot replace it, and EKS
+  # upgrades stall on it). maxUnavailable 1 allows one eviction at a time; the
+  # pod is back within seconds. Never set both: Kubernetes rejects that PDB.
+  minAvailable: null
+  maxUnavailable: 1
 ingress:
   enabled: false
 service:
