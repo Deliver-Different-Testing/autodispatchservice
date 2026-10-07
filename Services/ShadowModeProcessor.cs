@@ -24,11 +24,13 @@ public class ShadowModeProcessor
 
     public async Task ProcessAsync()
     {
-        // Check dispatch mode first — skip if Off
+        // Check dispatch mode first. Fail-safe: only proceed for an explicitly recognised ACTIVE mode.
+        // Anything else — "off", null, empty, "0", or an unexpected value — skips, so a misconfigured
+        // or unreadable config can never silently leave the paid HERE Maps calls running.
         var mode = await GetDispatchModeAsync();
-        if (string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
+        if (!IsActiveMode(mode))
         {
-            Log.Debug("Dispatch mode is Off — skipping");
+            Log.Debug("Dispatch mode '{Mode}' is not an active mode — skipping (no API calls)", mode);
             return;
         }
 
@@ -47,13 +49,15 @@ public class ShadowModeProcessor
         await conn.OpenAsync();
 
         await using var cmd = conn.CreateCommand();
-        // tucJobType.AutoDispatchEnabled filter: only jobs whose speed has been explicitly
-        // opted-in to auto-dispatch via Admin Manager are scored. Opt-in is the default —
-        // see autodispatch repo docs/JOB-TYPE-FILTER-IMPLEMENTATION.md.
+        // Only jobs whose speed/job-type is explicitly opted in (tucJobType.AutoDispatchEnabled = 1)
+        // are scored — this is the primary cost guard that keeps non-opted jobs out of the paid
+        // HERE Maps pool. The INNER JOIN excludes everything that hasn't been ticked on in Admin Manager.
         cmd.CommandText = @"
             SELECT TOP 50 j.ucjbID
             FROM tucJob j WITH (NOLOCK)
-            INNER JOIN tucJobType jt WITH (NOLOCK) ON jt.UcjtId = j.ucjbSpeed
+            INNER JOIN tucJobType jt WITH (NOLOCK)
+                ON jt.ucjtID = j.ucjbSpeed
+               AND jt.AutoDispatchEnabled = 1
             WHERE j.ucjbJobDone = 0
               AND j.ucjbVoid = 0
               AND j.ucjbDate >= CAST(GETDATE() AS DATE)
@@ -66,7 +70,6 @@ public class ShadowModeProcessor
               AND j.PickUpLongitude IS NOT NULL
               AND j.DeliveryLatitude IS NOT NULL
               AND j.DeliveryLongitude IS NOT NULL
-              AND jt.AutoDispatchEnabled = 1
             ORDER BY j.ucjbID DESC";
 
         await using var reader = await cmd.ExecuteReaderAsync();
@@ -186,8 +189,17 @@ public class ShadowModeProcessor
         }
     }
 
+    private static readonly HashSet<string> ActiveModes =
+        new(StringComparer.OrdinalIgnoreCase) { "shadow", "suggest", "assist", "auto" };
+
+    /// <summary>Active modes are the only ones that may trigger paid HERE Maps calls.</summary>
+    private static bool IsActiveMode(string? mode) =>
+        !string.IsNullOrWhiteSpace(mode) && ActiveModes.Contains(mode.Trim());
+
     /// <summary>
-    /// Read the current dispatch mode from Dispatch_Config.
+    /// Read the current dispatch mode from Dispatch_Config. Reads the most recently updated row
+    /// deterministically (the old TOP 1 with no ORDER BY returned an arbitrary row when the table
+    /// had more than one), and defaults to "off" on any error so failures fail safe.
     /// </summary>
     private async Task<string> GetDispatchModeAsync()
     {
@@ -197,7 +209,7 @@ public class ShadowModeProcessor
             await conn.OpenAsync();
 
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT TOP 1 Mode FROM Dispatch_Config";
+            cmd.CommandText = "SELECT TOP 1 Mode FROM Dispatch_Config ORDER BY LastUpdated DESC, ConfigId DESC";
 
             var result = await cmd.ExecuteScalarAsync();
             return result?.ToString() ?? "off";
