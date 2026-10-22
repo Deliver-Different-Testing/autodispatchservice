@@ -1,0 +1,57 @@
+replicaCount: 1
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+  targetCPUUtilizationPercentage: 80
+podDisruptionBudget:
+  enabled: true
+  minAvailable: null
+  maxUnavailable: 1
+ingress:
+  enabled: false
+service:
+  enabled: false
+livenessProbe:
+  probeType: exec
+  command:
+    - /bin/sh
+    - '-c'
+    - '[ $(find /tmp/healthy -mmin -2 | wc -l) -eq 1 ] || false'
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  failureThreshold: 3
+  timeoutSeconds: 10
+readinessProbe:
+  probeType: exec
+  command:
+    - /bin/sh
+    - '-c'
+    - '[ $(find /tmp/healthy -mmin -2 | wc -l) -eq 1 ] || false'
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  failureThreshold: 3
+  timeoutSeconds: 10
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+extraLabels:
+  tenant: cheetah
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: tenant
+              operator: In
+              values:
+                - cheetah
+tolerations:
+  - key: tenant
+    operator: Equal
+    value: cheetah
+    effect: NoSchedule
