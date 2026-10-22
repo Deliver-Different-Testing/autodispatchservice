@@ -1,0 +1,24 @@
+replicaCount: 1
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+extraLabels:
+  tenant: cheetah
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: tenant
+              operator: In
+              values:
+                - cheetah
+tolerations:
+  - key: tenant
+    operator: Equal
+    value: cheetah
+    effect: NoSchedule
