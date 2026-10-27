@@ -1,0 +1,5 @@
+# courierexp production: only what differs from ../auto-deploy-values.yaml.
+# Placement (tenant label, node affinity, toleration) is generated at deploy time.
+resources:
+  requests:
+    cpu: 250m
